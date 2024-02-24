@@ -1,0 +1,71 @@
+class MemoryAllocator:
+    NULL = -1
+    FREE = 0
+    ALLOCATED = 1
+    HEADER_SIZE = 3  # size, status, prev chunk addr
+
+    def __init__(self, initial_size: int) -> None:
+        self.memory = [0] * initial_size
+        # Initialize the first chunk as a free chunk covering the entire memory.
+        self.memory[0:3] = [initial_size, self.FREE, self.NULL]
+
+    def malloc(self, size: int) -> int:
+        addr = self._find_free_chunk(size)
+        if addr == self.NULL:
+            return self.NULL
+        self._split_chunk(addr, size)
+        return addr + self.HEADER_SIZE
+
+    def free(self, user_space_addr: int) -> None:
+        addr = user_space_addr - self.HEADER_SIZE
+        self.memory[addr + 1] = self.FREE
+        self._coalesce(addr)
+
+    def _find_free_chunk(self, size: int) -> int:
+        addr = 0
+        while addr < len(self.memory):
+            chunk_size, status, _ = self.memory[addr:addr + self.HEADER_SIZE]
+            if status == self.FREE and chunk_size >= size + self.HEADER_SIZE:
+                return addr
+            addr += chunk_size
+        return self.NULL
+
+    def _split_chunk(self, addr: int, size: int) -> None:
+        chunk_size = self.memory[addr]
+        if chunk_size - size > self.HEADER_SIZE:
+            new_chunk_size = chunk_size - size - self.HEADER_SIZE
+            self.memory[addr:addr + self.HEADER_SIZE] = [size + self.HEADER_SIZE, self.ALLOCATED, self.memory[addr + 2]]
+            new_chunk_addr = addr + size + self.HEADER_SIZE
+            self.memory[new_chunk_addr:new_chunk_addr + self.HEADER_SIZE] = [new_chunk_size, self.FREE, addr]
+        else:
+            self.memory[addr + 1] = self.ALLOCATED
+
+    def _coalesce(self, addr: int) -> None:
+        prev_addr = self.memory[addr + 2]
+        next_addr = addr + self.memory[addr]
+        if prev_addr != self.NULL and self.memory[prev_addr + 1] == self.FREE:
+            # Merge with previous chunk
+            prev_size = self.memory[prev_addr]
+            self.memory[prev_addr] += self.memory[addr]
+            addr = prev_addr
+        if next_addr < len(self.memory) and self.memory[next_addr + 1] == self.FREE:
+            # Merge with next chunk
+            self.memory[addr] += self.memory[next_addr]
+
+import unittest
+
+class TestMemoryAllocator(unittest.TestCase):
+    def test_chunk_allocation_and_freeing(self):
+        ma = MemoryAllocator(100)
+        addr1 = ma.malloc(10)
+        self.assertNotEqual(addr1, MemoryAllocator.NULL)
+        addr2 = ma.malloc(20)
+        self.assertNotEqual(addr2, MemoryAllocator.NULL)
+        ma.free(addr1)
+        addr3 = ma.malloc(5)
+        self.assertNotEqual(addr3, MemoryAllocator.NULL)
+        # Test if addr3 reuses the freed space from addr1
+        self.assertEqual(addr1, addr3)
+
+if __name__ == '__main__':
+    unittest.main()
